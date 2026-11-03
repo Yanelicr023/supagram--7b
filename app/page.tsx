@@ -15,16 +15,16 @@ export default function Home() {
     let mounted = true;
 
     const getUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getSession();
 
       if (error) {
-        console.error("Error al verificar usuario:", error);
+        console.error("Error al obtener sesión:", error);
         if (mounted) setCurrentUserId(null);
         return;
       }
 
       if (mounted) {
-        setCurrentUserId(data.user?.id ?? null);
+        setCurrentUserId(data.session?.user?.id ?? null);
       }
     };
 
@@ -52,6 +52,7 @@ export default function Home() {
     }
 
     const post = posts.find((p) => String(p.id) === String(postId));
+
     if (!post) return;
 
     if (post.isLiked) {
@@ -78,10 +79,12 @@ export default function Home() {
         )
       );
     } else {
-      const { error } = await supabase.from("likes").insert({
-        user_id: currentUserId,
-        post_id: postId,
-      });
+      const { error } = await supabase
+        .from("likes")
+        .insert({
+          user_id: currentUserId,
+          post_id: postId,
+        });
 
       if (error) {
         console.error("Error al guardar like:", error);
@@ -107,7 +110,10 @@ export default function Home() {
     postId: number | string,
     body: string
   ) => {
-    if (!currentUserId || !body.trim()) return;
+    if (!currentUserId || !body.trim()) {
+      console.error("Debes iniciar sesión para comentar.");
+      return;
+    }
 
     const { data, error } = await supabase
       .from("comments")
@@ -168,8 +174,11 @@ export default function Home() {
       }
 
       const postIds = postsData.map((p) => p.id);
+
       const userIds = [
-        ...new Set(postsData.map((p) => p.user_id).filter(Boolean)),
+        ...new Set(
+          postsData.map((p) => p.user_id).filter(Boolean)
+        ),
       ];
 
       // Obtener perfiles
@@ -181,7 +190,9 @@ export default function Home() {
           .select("id, user_id, username, avatar_url")
           .in("user_id", userIds);
 
-        if (error) console.error("Error al obtener perfiles:", error);
+        if (error) {
+          console.error("Error al obtener perfiles:", error);
+        }
 
         profilesMap = new Map(
           (profilesData || []).map((p) => [
@@ -195,12 +206,15 @@ export default function Home() {
       }
 
       // Contar likes
-      const { data: likesCountData, error: likesError } = await supabase
-        .from("likes")
-        .select("post_id")
-        .in("post_id", postIds);
+      const { data: likesCountData, error: likesError } =
+        await supabase
+          .from("likes")
+          .select("post_id")
+          .in("post_id", postIds);
 
-      if (likesError) console.error("Error al contar likes:", likesError);
+      if (likesError) {
+        console.error("Error al contar likes:", likesError);
+      }
 
       const likesCountMap = new Map<string | number, number>();
 
@@ -219,7 +233,9 @@ export default function Home() {
           .eq("user_id", currentUserId)
           .in("post_id", postIds);
 
-        if (error) console.error("Error al obtener likes:", error);
+        if (error) {
+          console.error("Error al obtener likes del usuario:", error);
+        }
 
         userLikesSet = new Set(
           userLikesData?.map((like) => like.post_id) || []
@@ -227,11 +243,12 @@ export default function Home() {
       }
 
       // Obtener comentarios
-      const { data: commentsData, error: commentsError } = await supabase
-        .from("comments")
-        .select("id, user_id, post_id, body, created_at")
-        .in("post_id", postIds)
-        .order("created_at", { ascending: true });
+      const { data: commentsData, error: commentsError } =
+        await supabase
+          .from("comments")
+          .select("id, user_id, post_id, body, created_at")
+          .in("post_id", postIds)
+          .order("created_at", { ascending: true });
 
       if (commentsError) {
         console.error("Error al obtener comentarios:", commentsError);
@@ -239,7 +256,9 @@ export default function Home() {
 
       // Obtener perfiles de comentaristas
       const commenterIds = [
-        ...new Set(commentsData?.map((c) => c.user_id).filter(Boolean) || []),
+        ...new Set(
+          commentsData?.map((c) => c.user_id).filter(Boolean) || []
+        ),
       ];
 
       let commenterProfilesMap = new Map();
@@ -251,7 +270,10 @@ export default function Home() {
           .in("user_id", commenterIds);
 
         if (error) {
-          console.error("Error al obtener perfiles de comentaristas:", error);
+          console.error(
+            "Error al obtener perfiles de comentaristas:",
+            error
+          );
         }
 
         commenterProfilesMap = new Map(
@@ -269,7 +291,8 @@ export default function Home() {
       const commentsMap = new Map<string | number, Comment[]>();
 
       commentsData?.forEach((comment) => {
-        const postComments = commentsMap.get(comment.post_id) || [];
+        const postComments =
+          commentsMap.get(comment.post_id) || [];
 
         postComments.push({
           ...comment,
@@ -279,7 +302,7 @@ export default function Home() {
         commentsMap.set(comment.post_id, postComments);
       });
 
-      // Unir información
+      // Unir toda la información
       const postsWithData: Post[] = postsData.map((post) => ({
         ...post,
         profile: profilesMap.get(post.user_id),
@@ -300,6 +323,7 @@ export default function Home() {
     };
   }, [currentUserId]);
 
+  // Mostrar publicaciones
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 bg-card-bg border-b border-border">
