@@ -1,13 +1,29 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import type { PostCardProps } from "../types";
 import { getTimeAgo } from "../utils/time";
 import { HeartIcon } from "./HeartIcon";
 
+const SUPABASE_URL = "https://lggbpdlcuhpmywiwlale.supabase.co";
+const STORAGE_BUCKET = "supagram";
 const DEFAULT_AVATAR = "/user.webp";
+
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return DEFAULT_AVATAR;
+
+  // Si ya es una URL completa, conservarla.
+  if (url.startsWith("https://") || url.startsWith("http://")) {
+    return url;
+  }
+
+  // Convertir rutas relativas en direcciones públicas de Supabase.
+  const path = url.replace(/^\/+/, "");
+
+  return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
+}
 
 export default function PostCard({
   post,
@@ -19,16 +35,12 @@ export default function PostCard({
   const [showComments, setShowComments] = useState(false);
 
   const username = post.profile?.username || "default_user";
-  const avatarUrl = post.profile?.avatar_url || DEFAULT_AVATAR;
+  const avatarUrl = getImageUrl(post.profile?.avatar_url);
+  const postImageUrl = getImageUrl(post.image_url);
 
-  // Corrige las rutas de las imágenes
-  const imageUrl = post.image_url?.startsWith("http")
-    ? post.image_url
-    : post.image_url?.startsWith("/")
-      ? post.image_url
-      : `/${post.image_url}`;
-
-  const handleSubmitComment = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmitComment = (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
 
     if (!commentText.trim() || !currentUserId) return;
@@ -39,7 +51,6 @@ export default function PostCard({
 
   return (
     <article className="bg-card-bg border border-border rounded-xl overflow-hidden shadow-sm">
-
       {/* Header */}
       <div className="flex items-center gap-3 p-4">
         <div className="relative w-10 h-10 rounded-full overflow-hidden ring-2 ring-primary bg-card-bg">
@@ -49,6 +60,7 @@ export default function PostCard({
             fill
             sizes="40px"
             className="object-cover"
+            unoptimized
           />
         </div>
 
@@ -65,19 +77,14 @@ export default function PostCard({
 
       {/* Imagen */}
       <div className="relative w-full aspect-square">
-        {imageUrl ? (
-          <Image
-            src={imageUrl}
-            alt={`Post de ${username}`}
-            fill
-            sizes="(max-width: 768px) 100vw, 600px"
-            className="object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-card-bg text-foreground/50">
-            Imagen no disponible
-          </div>
-        )}
+        <Image
+          src={postImageUrl}
+          alt={`Post de ${username}`}
+          fill
+          sizes="(max-width: 768px) 100vw, 600px"
+          className="object-cover"
+          unoptimized
+        />
       </div>
 
       {/* Acciones */}
@@ -108,7 +115,7 @@ export default function PostCard({
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337z"
+                d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 016 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337z"
               />
             </svg>
           </button>
@@ -144,9 +151,7 @@ export default function PostCard({
                 <span className="font-semibold text-foreground">
                   @{comment.profile?.username || "usuario"}
                 </span>{" "}
-                <span className="text-foreground/80">
-                  {comment.body}
-                </span>
+                <span className="text-foreground/80">{comment.body}</span>
               </div>
             ))}
           </div>

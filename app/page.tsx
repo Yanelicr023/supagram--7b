@@ -10,17 +10,21 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Obtener usuario actual
+  // Obtener sesión del usuario
   useEffect(() => {
+    let mounted = true;
+
     const getUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getSession();
 
       if (error) {
-        console.error("Error al obtener usuario:", error);
+        console.error("Error al obtener sesión:", error);
         return;
       }
 
-      setCurrentUserId(data.user?.id || null);
+      if (mounted) {
+        setCurrentUserId(data.session?.user?.id ?? null);
+      }
     };
 
     getUser();
@@ -28,10 +32,15 @@ export default function Home() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUserId(session?.user?.id || null);
+      if (mounted) {
+        setCurrentUserId(session?.user?.id ?? null);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Dar o quitar like
@@ -114,7 +123,6 @@ export default function Home() {
       return;
     }
 
-    // Buscar perfil mediante user_id, no mediante id
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")
       .select("username, avatar_url")
@@ -122,7 +130,7 @@ export default function Home() {
       .maybeSingle();
 
     if (profileError) {
-      console.error("Error al obtener perfil del comentarista:", profileError);
+      console.error("Error al obtener perfil:", profileError);
     }
 
     const newComment: Comment = {
@@ -251,7 +259,10 @@ export default function Home() {
             .in("user_id", commenterIds);
 
         if (commenterError) {
-          console.error("Error al obtener perfiles de comentaristas:", commenterError);
+          console.error(
+            "Error al obtener perfiles de comentaristas:",
+            commenterError
+          );
         }
 
         commenterProfilesMap = new Map(
@@ -279,7 +290,7 @@ export default function Home() {
         commentsMap.set(comment.post_id, postComments);
       });
 
-      // Unir toda la información
+      // Unir información
       const postsWithData: Post[] = postsData.map((post) => ({
         ...post,
         profile: profilesMap.get(post.user_id),
