@@ -1,13 +1,35 @@
+
+export interface Profile {
+  id?: string;
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface Comment {
+  id: number | string;
+  user_id: string;
+  post_id: number | string;
+  body: string;
+  created_at: string;
+  profile?: Profile;
+}
+
 export interface Post {
   id: number | string;
-  user: {
-    username: string;
-    avatar: string;
-  };
+  user_id: string;
+  profile?: Profile;
   image_url: string;
   caption: string;
-  likes: number;
+  likes_count: number;
   isLiked: boolean;
-  created_at: Date;
-  updated_at?: Date;
+  comments: Comment[];
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PostCardProps {
+  post: Post;
+  currentUserId: string | null;
+  onLike: (postId: number | string) => void;
+  onComment: (postId: number | string, body: string) => void;
 }

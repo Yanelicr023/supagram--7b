@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react";
 import Image from "next/image";
-import type { ChangeEvent, FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 
 export default function CreatePage() {
@@ -10,154 +9,76 @@ export default function CreatePage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ==========================================
-  // SELECCIONAR IMAGEN
-  // ==========================================
-  const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-
     if (file) {
       setImageFile(file);
-
       const reader = new FileReader();
-
       reader.onloadend = () => {
         setImagePreview(reader.result as string);
       };
-
       reader.readAsDataURL(file);
     }
   };
 
-  // ==========================================
-  // ELIMINAR IMAGEN
-  // ==========================================
   const handleRemoveImage = () => {
     setImageFile(null);
     setImagePreview(null);
-
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
-  // ==========================================
-  // SUBIR IMAGEN Y CREAR POST
-  // ==========================================
   const uploadAndCreatePost = async (file: File) => {
-    // ==========================================
-    // 1. CREAR NOMBRE ÚNICO
-    // ==========================================
-    const fileExt = file.name.split(".").pop() || "jpg";
-    const fileName = `${Date.now()}.${fileExt}`;
+    const userId = "11111111-1111-1111-1111-111111111111";
+
+    // 1️⃣ Preparar nombre del archivo
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${file.name}-${Date.now()}.${fileExt}`;
     const filePath = `images/${fileName}`;
 
-    console.log("📁 Bucket:", "supagram");
-    console.log("📁 Ruta:", filePath);
-
-    // ==========================================
-    // 2. SUBIR IMAGEN
-    // ==========================================
-    const { data: uploadData, error: uploadError } =
-      await supabase.storage
-        .from("supagram")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-    console.log("📤 Resultado de subida:", uploadData);
+    // 2️⃣ Subir al bucket "images"
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("supagram")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
 
     if (uploadError) {
-      console.error("❌ ERROR AL SUBIR IMAGEN");
-      console.error("Mensaje:", uploadError.message);
-      console.error("Detalles:", uploadError);
-
-      throw new Error(
-        `Error al subir la imagen: ${uploadError.message}`
-      );
+      console.error("❌ Error al subir imagen:", uploadError);
+      throw uploadError;
     }
 
-    // ==========================================
-    // 3. OBTENER URL PÚBLICA
-    // ==========================================
+    // 3️⃣ Obtener URL pública
     const { data: urlData } = supabase.storage
       .from("supagram")
       .getPublicUrl(filePath);
 
     const publicUrl = urlData.publicUrl;
 
-    console.log("📸 Imagen subida correctamente");
-    console.log("🔗 URL:", publicUrl);
+    console.log("📸 Imagen subida:", publicUrl);
 
-    // ==========================================
-    // 4. OBTENER UN user_id EXISTENTE
-    // ==========================================
-    const { data: existingPost, error: userError } = await supabase
-      .from("posts")
-      .select("user_id")
-      .not("user_id", "is", null)
-      .limit(1)
-      .maybeSingle();
-
-    if (userError) {
-      console.error("❌ ERROR AL OBTENER user_id");
-      console.error("Mensaje:", userError.message);
-
-      throw new Error(
-        `No se pudo obtener el usuario: ${userError.message}`
-      );
-    }
-
-    if (!existingPost?.user_id) {
-      throw new Error(
-        "No existe ningún user_id disponible en la tabla posts."
-      );
-    }
-
-    console.log("👤 user_id utilizado:", existingPost.user_id);
-
-    // ==========================================
-    // 5. CREAR POST
-    // ==========================================
+    // 4️⃣ Crear el post en la tabla posts_new
     const { data: postData, error: postError } = await supabase
       .from("posts")
       .insert({
-        user_id: existingPost.user_id,
+        user_id: userId,
         image_url: publicUrl,
         caption: caption,
         likes: 0,
       })
       .select("*");
 
-    // ==========================================
-    // 6. COMPROBAR ERROR
-    // ==========================================
     if (postError) {
-      console.error("❌ ERROR AL CREAR EL POST");
-      console.error("Mensaje:", postError.message);
-      console.error("Detalles:", postError.details);
-      console.error("Hint:", postError.hint);
-      console.error("Código:", postError.code);
-
-      throw new Error(
-        `Supabase: ${postError.message}${
-          postError.details
-            ? ` | ${postError.details}`
-            : ""
-        }`
-      );
+      console.error("❌ Error creando el post:", postError);
+      throw postError;
     }
 
-    console.log("🆕 POST CREADO:", postData);
+    console.log("🆕 Post creado:", postData);
 
     return {
       uploadedImageUrl: publicUrl,
@@ -165,18 +86,11 @@ export default function CreatePage() {
     };
   };
 
-  // ==========================================
-  // PUBLICAR
-  // ==========================================
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!imageFile) {
-      setMessage({
-        type: "error",
-        text: "Por favor selecciona una imagen",
-      });
-
+      setMessage({ type: "error", text: "Por favor selecciona una imagen" });
       return;
     }
 
@@ -186,38 +100,27 @@ export default function CreatePage() {
     try {
       await uploadAndCreatePost(imageFile);
 
-      setMessage({
-        type: "success",
-        text: "¡Post creado exitosamente!",
-      });
-
+      // Éxito
+      setMessage({ type: "success", text: "¡Post creado exitosamente!" });
       setImageFile(null);
       setImagePreview(null);
       setCaption("");
-
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     } catch (error) {
-      console.error("❌ ERROR COMPLETO:", error);
-
       setMessage({
         type: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : String(error),
+        text: error instanceof Error ? error.message : "Error al crear el post",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ==========================================
-  // INTERFAZ
-  // ==========================================
   return (
     <div className="min-h-screen bg-background">
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-card-bg border-b border-border">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-center">
           <h1 className="text-xl font-bold bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
@@ -226,12 +129,10 @@ export default function CreatePage() {
         </div>
       </header>
 
+      {/* Formulario */}
       <main className="max-w-lg mx-auto px-4 py-8">
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-6"
-        >
-          {/* IMAGEN */}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {/* Área de carga de imagen */}
           <div className="flex flex-col gap-2">
             {imagePreview ? (
               <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-card-bg border border-border">
@@ -239,10 +140,8 @@ export default function CreatePage() {
                   src={imagePreview}
                   alt="Preview"
                   fill
-                  unoptimized
                   className="object-cover"
                 />
-
                 <button
                   type="button"
                   onClick={handleRemoveImage}
@@ -284,7 +183,6 @@ export default function CreatePage() {
                       strokeLinejoin="round"
                       d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"
                     />
-
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -292,13 +190,12 @@ export default function CreatePage() {
                     />
                   </svg>
                 </div>
-
                 <span className="text-foreground/60 text-sm">
                   Haz clic para seleccionar una imagen
                 </span>
               </label>
             )}
-
+            
             <input
               ref={fileInputRef}
               id="image-upload"
@@ -309,7 +206,7 @@ export default function CreatePage() {
             />
           </div>
 
-          {/* DESCRIPCIÓN */}
+          {/* Caption */}
           <div className="flex flex-col gap-2">
             <textarea
               id="caption"
@@ -321,7 +218,7 @@ export default function CreatePage() {
             />
           </div>
 
-          {/* MENSAJE */}
+          {/* Mensaje de estado */}
           {message && (
             <div
               className={`px-4 py-3 rounded-xl text-sm ${
@@ -334,7 +231,7 @@ export default function CreatePage() {
             </div>
           )}
 
-          {/* BOTÓN */}
+          {/* Botón de enviar */}
           <button
             type="submit"
             disabled={isLoading || !imageFile}
@@ -356,14 +253,12 @@ export default function CreatePage() {
                     stroke="currentColor"
                     strokeWidth="4"
                   />
-
                   <path
                     className="opacity-75"
                     fill="currentColor"
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-
                 Publicando...
               </>
             ) : (
