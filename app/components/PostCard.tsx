@@ -9,7 +9,8 @@ import { HeartIcon } from "./HeartIcon";
 
 const SUPABASE_URL = "https://lggbpdlcuhpmywiwlale.supabase.co";
 const STORAGE_BUCKET = "supagram";
-const DEFAULT_AVATAR = "/user.webp";
+
+const DEFAULT_AVATAR = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/images/icono.png`;
 
 function getImageUrl(url: string | null | undefined): string {
   if (!url) return DEFAULT_AVATAR;
