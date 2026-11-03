@@ -13,16 +13,33 @@ export default function Home() {
   // Obtener usuario actual
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUserId(user?.id || null);
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error) {
+        console.error("Error al obtener usuario:", error);
+        return;
+      }
+
+      setCurrentUserId(data.user?.id || null);
     };
 
     getUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user?.id || null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   // Dar o quitar like
   const handleLike = async (postId: number | string) => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      console.error("Debes iniciar sesión para dar like.");
+      return;
+    }
 
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
@@ -34,40 +51,44 @@ export default function Home() {
         .eq("user_id", currentUserId)
         .eq("post_id", postId);
 
-      if (!error) {
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId
-              ? {
-                  ...p,
-                  isLiked: false,
-                  likes_count: Math.max(0, (p.likes_count ?? 0) - 1),
-                }
-              : p
-          )
-        );
+      if (error) {
+        console.error("Error al quitar like:", error);
+        return;
       }
-    } else {
-      const { error } = await supabase
-        .from("likes")
-        .insert({
-          user_id: currentUserId,
-          post_id: postId,
-        });
 
-      if (!error) {
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId
-              ? {
-                  ...p,
-                  isLiked: true,
-                  likes_count: (p.likes_count ?? 0) + 1,
-                }
-              : p
-          )
-        );
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                isLiked: false,
+                likes_count: Math.max(0, (p.likes_count ?? 0) - 1),
+              }
+            : p
+        )
+      );
+    } else {
+      const { error } = await supabase.from("likes").insert({
+        user_id: currentUserId,
+        post_id: postId,
+      });
+
+      if (error) {
+        console.error("Error al guardar like:", error);
+        return;
       }
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                isLiked: true,
+                likes_count: (p.likes_count ?? 0) + 1,
+              }
+            : p
+        )
+      );
     }
   };
 
@@ -83,7 +104,7 @@ export default function Home() {
       .insert({
         user_id: currentUserId,
         post_id: postId,
-        body,
+        body: body.trim(),
       })
       .select("id, user_id, post_id, body, created_at")
       .single();
@@ -93,11 +114,16 @@ export default function Home() {
       return;
     }
 
-    const { data: profileData } = await supabase
+    // Buscar perfil mediante user_id, no mediante id
+    const { data: profileData, error: profileError } = await supabase
       .from("profiles")
       .select("username, avatar_url")
-      .eq("id", currentUserId)
-      .single();
+      .eq("user_id", currentUserId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("Error al obtener perfil del comentarista:", profileError);
+    }
 
     const newComment: Comment = {
       ...data,
@@ -135,29 +161,43 @@ export default function Home() {
       }
 
       const postIds = postsData.map((p) => p.id);
-      const userIds = [...new Set(postsData.map((p) => p.user_id))];
+      const userIds = [
+        ...new Set(postsData.map((p) => p.user_id).filter(Boolean)),
+      ];
 
-      // Obtener perfiles
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("id, username, avatar_url")
-        .in("id", userIds);
+      // Obtener perfiles mediante user_id
+      let profilesMap = new Map();
 
-      const profilesMap = new Map(
-        (profilesData || []).map((p) => [
-          p.id,
-          {
-            username: p.username,
-            avatar_url: p.avatar_url,
-          },
-        ])
-      );
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, user_id, username, avatar_url")
+          .in("user_id", userIds);
+
+        if (profilesError) {
+          console.error("Error al obtener perfiles:", profilesError);
+        }
+
+        profilesMap = new Map(
+          (profilesData || []).map((p) => [
+            p.user_id,
+            {
+              username: p.username,
+              avatar_url: p.avatar_url,
+            },
+          ])
+        );
+      }
 
       // Contar likes
-      const { data: likesCountData } = await supabase
+      const { data: likesCountData, error: likesError } = await supabase
         .from("likes")
         .select("post_id")
         .in("post_id", postIds);
+
+      if (likesError) {
+        console.error("Error al contar likes:", likesError);
+      }
 
       const likesCountMap = new Map<string | number, number>();
 
@@ -170,11 +210,15 @@ export default function Home() {
       let userLikesSet = new Set<string | number>();
 
       if (currentUserId) {
-        const { data: userLikesData } = await supabase
+        const { data: userLikesData, error: userLikesError } = await supabase
           .from("likes")
           .select("post_id")
           .eq("user_id", currentUserId)
           .in("post_id", postIds);
+
+        if (userLikesError) {
+          console.error("Error al obtener likes del usuario:", userLikesError);
+        }
 
         userLikesSet = new Set(
           userLikesData?.map((like) => like.post_id) || []
@@ -182,28 +226,37 @@ export default function Home() {
       }
 
       // Obtener comentarios
-      const { data: commentsData } = await supabase
+      const { data: commentsData, error: commentsError } = await supabase
         .from("comments")
         .select("id, user_id, post_id, body, created_at")
         .in("post_id", postIds)
         .order("created_at", { ascending: true });
 
+      if (commentsError) {
+        console.error("Error al obtener comentarios:", commentsError);
+      }
+
       // Obtener perfiles de los comentaristas
       const commenterIds = [
-        ...new Set(commentsData?.map((c) => c.user_id) || []),
+        ...new Set(commentsData?.map((c) => c.user_id).filter(Boolean) || []),
       ];
 
       let commenterProfilesMap = new Map();
 
       if (commenterIds.length > 0) {
-        const { data: commenterProfiles } = await supabase
-          .from("profiles")
-          .select("id, username, avatar_url")
-          .in("id", commenterIds);
+        const { data: commenterProfiles, error: commenterError } =
+          await supabase
+            .from("profiles")
+            .select("user_id, username, avatar_url")
+            .in("user_id", commenterIds);
+
+        if (commenterError) {
+          console.error("Error al obtener perfiles de comentaristas:", commenterError);
+        }
 
         commenterProfilesMap = new Map(
           (commenterProfiles || []).map((p) => [
-            p.id,
+            p.user_id,
             {
               username: p.username,
               avatar_url: p.avatar_url,
@@ -243,7 +296,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card-bg border-b border-border">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-center">
@@ -256,7 +308,6 @@ export default function Home() {
       {/* Feed de publicaciones */}
       <main className="max-w-lg mx-auto px-4 py-6">
         <div className="flex flex-col gap-6">
-
           {posts.length > 0 ? (
             posts.map((post) => (
               <PostCard
@@ -272,7 +323,6 @@ export default function Home() {
               No hay publicaciones todavía.
             </div>
           )}
-
         </div>
       </main>
     </div>
